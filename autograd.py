@@ -137,7 +137,7 @@ class Subtraction(Operation):
 
     def df(self, x, y):
         super().df(x, y)
-        return [1, -1]  
+        return [1, -1]
 
 
 class Multiplication(Operation):
@@ -181,6 +181,81 @@ class Sigmoid(Operation):
     def df(self, x):
         super().df(x)
         return [np.exp(x.value) / (1 + np.exp(x.value)) ** 2]
+
+
+class Exp(Operation):
+    def __init__(self):
+        super(Exp, self).__init__()
+        self.name = 'exp'
+        self.single_variable_op = True
+
+    def f(self, x):
+        super().f(x)
+        return Variable(np.exp(x.value), _children=(x,), _op=Exp())
+
+    def df(self, x):
+        super().df(x)
+        return [np.exp(x.value)]
+
+
+class Log(Operation):
+    def __init__(self):
+        super(Log, self).__init__()
+        self.name = 'log'
+        self.single_variable_op = True
+
+    def f(self, x):
+        super().f(x)
+        return Variable(np.log(x.value), _children=(x,), _op=Log())
+
+    def df(self, x):
+        super().df(x)
+        return [1 / x.value]
+
+
+class Tanh(Operation):
+    def __init__(self):
+        super(Tanh, self).__init__()
+        self.name = 'tanh'
+        self.single_variable_op = True
+
+    def f(self, x):
+        super().f(x)
+        return Variable(np.tanh(x.value), _children=(x,), _op=Tanh())
+
+    def df(self, x):
+        super().df(x)
+        return [1 - np.tanh(x.value) ** 2]
+
+
+class Sin(Operation):
+    def __init__(self):
+        super(Sin, self).__init__()
+        self.name = 'sin'
+        self.single_variable_op = True
+
+    def f(self, x):
+        super().f(x)
+        return Variable(np.sin(x.value), _children=(x,), _op=Sin())
+
+    def df(self, x):
+        super().df(x)
+        return [np.cos(x.value)]
+
+
+class Cos(Operation):
+    def __init__(self):
+        super(Cos, self).__init__()
+        self.name = 'cos'
+        self.single_variable_op = True
+
+    def f(self, x):
+        super().f(x)
+        return Variable(np.cos(x.value), _children=(x,), _op=Cos())
+
+    def df(self, x):
+        super().df(x)
+        return [-np.sin(x.value)]
 
 
 class Module:
