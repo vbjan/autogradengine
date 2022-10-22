@@ -26,19 +26,26 @@ class Variable:
         func = Multiplication()
         return func.f(self, other)
 
-    def __rmul__(self, other):
+    def __rmul__(self, other):  # other * self
         return self * other
 
-    def __sub__(self, other):
+    def __sub__(self, other):  # self - other
         other = self.check_if_var_else_create(other)
         func = Subtraction()
         return func.f(self, other)
 
-    def __rsub__(self, other):
-        return self - other
+    def __rsub__(self, other):  # other - self
+        return other + (-self)
+
+    def __truediv__(self, other):
+        return self * other**(-1)
+
+    def __rtruediv__(self, other):  # other / self
+        return other * self**(-1)
 
     def __neg__(self):
-        return Variable(-self.value, requires_grad=self.requires_grad)
+        func = Negation()
+        return func.f(self)
 
     def __pow__(self, power):
         power = self.check_if_var_else_create(power)
@@ -108,8 +115,12 @@ class Operation:
     def __repr__(self):
         return f"Operation(name={self.name})"
 
+    # Calling operation also supports inputs not of type Variable
     def __call__(self, *args):
-        return self.f(*args)
+        new_args = ()
+        for arg in args:
+            new_args = new_args + (Variable.check_if_var_else_create(arg), )
+        return self.f(*new_args)
 
 
 # Two variable operations
@@ -190,6 +201,21 @@ class Power(Operation):
 
 
 # Single variable operations:
+class Negation(Operation):
+    def __init__(self):
+        super(Negation, self).__init__()
+        self.name = '-'
+        self.single_variable_op = True
+
+    def f(self, x):
+        super().f(x)
+        return Variable(-x.value, _children=(x,), _op=Negation())
+
+    def df(self, x):
+        super().df(x)
+        return [-1]
+
+
 class Sigmoid(Operation):
     def __init__(self):
         super(Sigmoid, self).__init__()
@@ -296,7 +322,7 @@ class Module:
         assert isinstance(other, Module)
         for param, torch_param in zip(self.params, other.params):
             if not math.isclose(float(param.grad), float(torch_param.grad), abs_tol=1e-5):
-                print(float(param.grad), float(torch_param.grad))
+                return False
         return True
 
     def forward(self, *args, **kwargs):
@@ -307,32 +333,65 @@ class Module:
 
 
 if __name__ == '__main__':
-    from random import random
+    import random
     from optimizer import GD
     import matplotlib.pyplot as plt
+    from test import check_gradients
 
-    class QuadrFunc(Module):
+
+    def z_func(x, y):
+        # return (1-(x**2+y**3))*np.exp(-(x**2+y**2)/2)
+        # return x**2 + y**2
+        return - x ** 2 + y ** 2
+
+
+    class MulVariableMod(Module):
         def __init__(self):
-            super(QuadrFunc, self).__init__()
-            self.x = Variable(random())
+            super(MulVariableMod, self).__init__()
+            self.x = Variable(0.5)
+            self.y = Variable(1)
+            print(f"Starting initialization: x={self.x.value}, y={self.y.value}")
             self.params.append(self.x)
+            self.params.append(self.y)
 
         def forward(self):
-            return (self.x - 3) ** 2
+            # return (1-(self.x**2+self.y**3))*exp(-(self.x**2+self.y**2)/2)
+            return z_func(self.x, self.y)
 
 
-    f = QuadrFunc()
-    optim = GD(params=f.params)
+    def perform_2d_gd(module, optim, epochs=20):
+        func_value_history = []
+        x_value_history = []
+        y_value_history = []
 
-    EPOCHS = 100
-    func_values = []
-    for epoch in range(EPOCHS):
-        optim.zero_grad()
-        func_value = f.forward()
-        print(f"x = {f.x.value:.2f}, f(x) = {func_value.value:.2f}")
-        func_value.backward()
-        optim.step()
-        func_values.append(func_value.value)
+        for epoch in range(epochs):
+            x_value_history.append(module.x.value)
+            y_value_history.append(module.y.value)
 
-    plt.plot(func_values)
+            optim.zero_grad()
+            func_value = module.forward()
+            func_value.backward()
+            assert (math.isclose(func_value.value, z_func(module.x.value, module.y.value), abs_tol=1e-2))
+            optim.step()
+
+            func_value_history.append(func_value.value)
+            if epoch % 2 == 0:
+                print(f"epoch: {epoch} | x: {module.x.value} | y: {module.y.value} | f(x): {func_value.value}")
+        return np.array(x_value_history), np.array(y_value_history), np.array(func_value_history)
+
+    module = MulVariableMod()
+    optim = GD(params=module.params, lr=0.1)
+    x_value_history, y_value_history, func_value_history = perform_2d_gd(module, optim)
+
+    x = np.arange(-3.0, 3.0, 0.1)
+    y = np.arange(-3.0, 3.0, 0.1)
+    [X, Y] = np.meshgrid(x, y)
+    fig, ax = plt.subplots(1, 1)
+    Z = z_func(X, Y)
+    ax.contourf(X, Y, Z)
+    ax.set_title('Filled Contour Plot')
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    plt.plot(x_value_history, y_value_history, 'o')
+
     plt.show()

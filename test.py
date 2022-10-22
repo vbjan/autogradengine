@@ -1,3 +1,4 @@
+import autograd
 from autograd import Variable, Module, Sigmoid
 import torch
 
@@ -38,6 +39,23 @@ class TestModule2(Module):
         return g
 
 
+class MulVariableMod(Module):
+    def __init__(self, var, use_torch=False):
+        super(MulVariableMod, self).__init__()
+        if use_torch:
+            self.exp = torch.exp
+        else:
+            self.exp = autograd.Exp()
+        self.x = var(-2)
+        self.y = var(2)
+        self.params.append(self.x)
+        self.params.append(self.y)
+
+    def forward(self):
+        # return (1-(self.x**2+self.y**3))*exp(-(self.x**2+self.y**2)/2)
+        return (1 - (self.x**2+self.y**3))  # *self.exp(-(self.x**2+self.y**2)/2)
+
+
 def create_torch_tensor(x):
     a = torch.Tensor([x])
     a.requires_grad = True
@@ -53,7 +71,8 @@ def check_gradients(module):
     correct_func = module(create_torch_tensor, use_torch=True)
     correct_output = correct_func.forward()
     correct_output.backward()
-    print(f"\n engine gradients: {func} \npytorch gradients: {correct_func} ")
+    print(f"\nengine output: {output}, \npytorch output: {correct_output}")
+    print(f"\nengine gradients: {func} \npytorch gradients: {correct_func} ")
     if func == correct_func:
         print("Correct gradients!")
     else:
@@ -63,3 +82,4 @@ def check_gradients(module):
 if __name__ == '__main__':
     check_gradients(TestModule1)
     check_gradients(TestModule2)
+    check_gradients(MulVariableMod)
