@@ -112,6 +112,7 @@ class Operation:
         return self.f(*args)
 
 
+# Two variable operations
 class Addition(Operation):
     def __init__(self):
         super(Addition, self).__init__()
@@ -123,7 +124,12 @@ class Addition(Operation):
 
     def df(self, x, y):
         super().df(x, y)
-        return [1, 1]
+        full_grad = [0, 0]
+        if x.requires_grad:
+            full_grad[0] = 1
+        if y.requires_grad:
+            full_grad[1] = 1
+        return full_grad
 
 
 class Subtraction(Operation):
@@ -137,7 +143,12 @@ class Subtraction(Operation):
 
     def df(self, x, y):
         super().df(x, y)
-        return [1, -1]
+        full_grad = [0, 0]
+        if x.requires_grad:
+            full_grad[0] = 1
+        if y.requires_grad:
+            full_grad[1] = -1
+        return full_grad
 
 
 class Multiplication(Operation):
@@ -151,7 +162,12 @@ class Multiplication(Operation):
 
     def df(self, x, y):
         super().df(x, y)
-        return [y.value, x.value]
+        full_grad = [0, 0]
+        if x.requires_grad:
+            full_grad[0] = y.value
+        if y.requires_grad:
+            full_grad[1] = x.value
+        return full_grad
 
 
 class Power(Operation):
@@ -165,9 +181,15 @@ class Power(Operation):
 
     def df(self, x, y):
         super().df(x, y)
-        return [y.value * x.value ** (y.value - 1), x.value ** y.value * np.log(x.value)]
+        full_grad = [0, 0]
+        if x.requires_grad:
+            full_grad[0] = y.value * x.value ** (y.value - 1)
+        if y.requires_grad:
+            full_grad[1] = x.value ** y.value * np.log(x.value)
+        return full_grad
 
 
+# Single variable operations:
 class Sigmoid(Operation):
     def __init__(self):
         super(Sigmoid, self).__init__()
@@ -259,8 +281,8 @@ class Cos(Operation):
 
 
 class Module:
-    def __init__(self, var, use_torch=False):
-        self.var = None
+    def __init__(self, var=None, use_torch=False):
+        self.var = var
         self.use_torch = use_torch
         self.params = []
 
@@ -277,5 +299,40 @@ class Module:
                 print(float(param.grad), float(torch_param.grad))
         return True
 
+    def forward(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def __call__(self, *args, **kwargs):
+        return self.forward(*args, **kwargs)
 
 
+if __name__ == '__main__':
+    from random import random
+    from optimizer import GD
+    import matplotlib.pyplot as plt
+
+    class QuadrFunc(Module):
+        def __init__(self):
+            super(QuadrFunc, self).__init__()
+            self.x = Variable(random())
+            self.params.append(self.x)
+
+        def forward(self):
+            return (self.x - 3) ** 2
+
+
+    f = QuadrFunc()
+    optim = GD(params=f.params)
+
+    EPOCHS = 100
+    func_values = []
+    for epoch in range(EPOCHS):
+        optim.zero_grad()
+        func_value = f.forward()
+        print(f"x = {f.x.value:.2f}, f(x) = {func_value.value:.2f}")
+        func_value.backward()
+        optim.step()
+        func_values.append(func_value.value)
+
+    plt.plot(func_values)
+    plt.show()
