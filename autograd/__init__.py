@@ -5,7 +5,7 @@ import torch
 
 class Variable:
     def __init__(self, value, _children=(), _op=None, requires_grad=True):
-        self.value = value
+        self.value = np.array(value, dtype=float)  # should be of type np.array
         self.grad = 0
         self._children = _children
         self._op = _op
@@ -14,59 +14,50 @@ class Variable:
     def __repr__(self):
         return f"Variable(value={self.value}, grad={self.grad}, _op={self._op})"
 
+    # element-wise addition
     def __add__(self, other):
-        other = self.check_if_var_else_create(other)
-        func = Addition()
-        return func.f(self, other)
+        return Addition.f(self, other)
 
     def __radd__(self, other):
         return self + other
 
+    # element-wise multiplication
     def __mul__(self, other):
-        other = self.check_if_var_else_create(other)
-        func = Multiplication()
-        return func.f(self, other)
+        return Multiplication.f(self, other)
 
     def __rmul__(self, other):  # other * self
         return self * other
 
+    # element-wise subtraction
     def __sub__(self, other):  # self - other
-        other = self.check_if_var_else_create(other)
-        func = Subtraction()
-        return func.f(self, other)
+        return Subtraction.f(self, other)
 
     def __rsub__(self, other):  # other - self
         return other + (-self)
 
+    def __neg__(self):
+        return Negation.f(self)
+
+    # element-wise power operation
+    def __pow__(self, power):
+        return Power.f(self, power)
+
+    # element-wise division
     def __truediv__(self, other):
-        return self * other ** (-1)
+        return self * other ** -1.
 
     def __rtruediv__(self, other):  # other / self
-        return other * self ** (-1)
-
-    def __neg__(self):
-        func = Negation()
-        return func.f(self)
-
-    def __pow__(self, power):
-        power = self.check_if_var_else_create(power)
-        func = Power()
-        return func.f(self, power)
+        return other * self ** -1.
 
     def sign(self):
+        if self.value.shape != 1:
+            raise ValueError("Sign operation only works on scalars")
         if self.value < 0:
             return -1
         if self.value > 0:
             return 1
         else:
             return 0
-
-    @staticmethod
-    def check_if_var_else_create(other):
-        if not isinstance(other, Variable):
-            # we don't calculate gradients for constants
-            other = Variable(other, requires_grad=False)
-        return other
 
     def _local_backward(self):
         assert self._op is not None
@@ -138,25 +129,27 @@ class Operation:
         self.name = None
         self.single_variable_op = False
 
-    # *args must be of type Variable to ensure that computation graph can be built
-    def f(self, *args):
-        for v in args:
-            assert isinstance(v, Variable)
+    @staticmethod
+    def f(*args):
+        raise NotImplementedError
 
-    # *args must be of type Variable
-    def df(self, *args):
-        for v in args:
-            assert isinstance(v, Variable)
+    @staticmethod
+    def df(*args):
+        raise NotImplementedError
 
     def __repr__(self):
         return f"Operation(name={self.name})"
 
     # Calling operation also supports inputs not of type Variable
     def __call__(self, *args):
-        new_args = ()
-        for arg in args:
-            new_args = new_args + (Variable.check_if_var_else_create(arg), )
-        return self.f(*new_args)
+        return self.f(*args)
+
+    @staticmethod
+    def check_if_var_else_create(other):
+        if not isinstance(other, Variable):
+            # we don't calculate gradients for constants
+            other = Variable(other, requires_grad=False)
+        return other
 
 
 # Two variable operations
@@ -165,17 +158,21 @@ class Addition(Operation):
         super(Addition, self).__init__()
         self.name = '+'
 
-    def f(self, x, y):
-        super().f(x, y)
+    @staticmethod
+    def f(x, y):
+        x = Operation.check_if_var_else_create(x)
+        y = Operation.check_if_var_else_create(y)
+        if x.value.shape != y.value.shape:
+            raise ValueError("Shape mismatch")
         return Variable(x.value + y.value, _children=(x, y), _op=Addition())
 
-    def df(self, x, y):
-        super().df(x, y)
+    @staticmethod
+    def df(x, y):
         full_grad = [0, 0]
         if x.requires_grad:
-            full_grad[0] = 1
+            full_grad[0] = np.ones(x.value.shape)
         if y.requires_grad:
-            full_grad[1] = 1
+            full_grad[1] = np.ones(y.value.shape)
         return full_grad
 
 
@@ -184,17 +181,21 @@ class Subtraction(Operation):
         super(Subtraction, self).__init__()
         self.name = '-'
 
-    def f(self, x, y):
-        super().f(x, y)
+    @staticmethod
+    def f(x, y):
+        x = Operation.check_if_var_else_create(x)
+        y = Operation.check_if_var_else_create(y)
+        if x.value.shape != y.value.shape:
+            raise ValueError("Shape mismatch")
         return Variable(x.value - y.value, _children=(x, y), _op=Subtraction())
 
-    def df(self, x, y):
-        super().df(x, y)
+    @staticmethod
+    def df(x, y):
         full_grad = [0, 0]
         if x.requires_grad:
-            full_grad[0] = 1
+            full_grad[0] = np.ones(x.value.shape)
         if y.requires_grad:
-            full_grad[1] = -1
+            full_grad[1] = -np.ones(y.value.shape)
         return full_grad
 
 
@@ -203,12 +204,16 @@ class Multiplication(Operation):
         super(Multiplication, self).__init__()
         self.name = '*'
 
-    def f(self, x, y):
-        super().f(x, y)
-        return Variable(x.value * y.value, _children=(x, y), _op=Multiplication())
+    @staticmethod
+    def f(x, y):
+        x = Operation.check_if_var_else_create(x)
+        y = Operation.check_if_var_else_create(y)
+        if x.value.shape != y.value.shape:
+            raise ValueError("Shape mismatch")
+        return Variable(np.multiply(x.value, y.value), _children=(x, y), _op=Multiplication())
 
-    def df(self, x, y):
-        super().df(x, y)
+    @staticmethod
+    def df(x, y):
         full_grad = [0, 0]
         if x.requires_grad:
             full_grad[0] = y.value
@@ -217,22 +222,24 @@ class Multiplication(Operation):
         return full_grad
 
 
-class Power(Operation):
+class Power(Operation):  # only works if power is scalar
     def __init__(self):
         super(Power, self).__init__()
         self.name = '**'
 
-    def f(self, x, y):
-        super().f(x, y)
-        return Variable(x.value ** y.value, _children=(x, y), _op=Power())
+    @staticmethod
+    def f(x, y):
+        x = Operation.check_if_var_else_create(x)
+        y = Operation.check_if_var_else_create(y)
+        return Variable(np.power(x.value, y.value), _children=(x, y), _op=Power())
 
-    def df(self, x, y):
-        super().df(x, y)
+    @staticmethod
+    def df(x, y):
         full_grad = [0, 0]
         if x.requires_grad:
-            full_grad[0] = y.value * x.value ** (y.value - 1)
+            full_grad[0] = np.multiply(y.value, np.power(x.value, (y.value - 1.)))
         if y.requires_grad:
-            full_grad[1] = x.value ** y.value * np.log(x.value)
+            full_grad[1] = np.multiply(np.power(x.value, y.value), np.log(x.value))
         return full_grad
 
 
@@ -243,13 +250,14 @@ class Negation(Operation):
         self.name = '-'
         self.single_variable_op = True
 
-    def f(self, x):
-        super().f(x)
+    @staticmethod
+    def f(x):
+        x = Operation.check_if_var_else_create(x)
         return Variable(-x.value, _children=(x,), _op=Negation())
 
-    def df(self, x):
-        super().df(x)
-        return [-1]
+    @staticmethod
+    def df(x):
+        return [-np.ones(x.value.shape)]
 
 
 class Sigmoid(Operation):
@@ -258,13 +266,14 @@ class Sigmoid(Operation):
         self.name = 'sigmoid'
         self.single_variable_op = True
 
-    def f(self, x):
-        super().f(x)
-        return Variable(1 / (1 + np.exp(-x.value)), _children=(x,), _op=Sigmoid())
+    @staticmethod
+    def f(x):
+        x = Operation.check_if_var_else_create(x)
+        return Variable(np.divide(1, (1 + np.exp(-x.value))), _children=(x,), _op=Sigmoid())
 
-    def df(self, x):
-        super().df(x)
-        return [np.exp(x.value) / (1 + np.exp(x.value)) ** 2]
+    @staticmethod
+    def df(x):
+        return [np.divide(np.exp(x.value), np.power((1 + np.exp(x.value)), 2))]
 
 
 class Exp(Operation):
@@ -273,12 +282,13 @@ class Exp(Operation):
         self.name = 'exp'
         self.single_variable_op = True
 
-    def f(self, x):
-        super().f(x)
+    @staticmethod
+    def f(x):
+        x = Operation.check_if_var_else_create(x)
         return Variable(np.exp(x.value), _children=(x,), _op=Exp())
 
-    def df(self, x):
-        super().df(x)
+    @staticmethod
+    def df(x):
         return [np.exp(x.value)]
 
 
@@ -288,13 +298,14 @@ class Log(Operation):
         self.name = 'log'
         self.single_variable_op = True
 
-    def f(self, x):
-        super().f(x)
+    @staticmethod
+    def f(x):
+        x = Operation.check_if_var_else_create(x)
         return Variable(np.log(x.value), _children=(x,), _op=Log())
 
-    def df(self, x):
-        super().df(x)
-        return [1 / x.value]
+    @staticmethod
+    def df(x):
+        return [np.divide(1, x.value)]
 
 
 class Tanh(Operation):
@@ -303,13 +314,14 @@ class Tanh(Operation):
         self.name = 'tanh'
         self.single_variable_op = True
 
-    def f(self, x):
-        super().f(x)
+    @staticmethod
+    def f(x):
+        x = Operation.check_if_var_else_create(x)
         return Variable(np.tanh(x.value), _children=(x,), _op=Tanh())
 
-    def df(self, x):
-        super().df(x)
-        return [1 - np.tanh(x.value) ** 2]
+    @staticmethod
+    def df(x):
+        return [1 - np.power(np.tanh(x.value), 2)]
 
 
 class Sin(Operation):
@@ -318,12 +330,13 @@ class Sin(Operation):
         self.name = 'sin'
         self.single_variable_op = True
 
-    def f(self, x):
-        super().f(x)
+    @staticmethod
+    def f(x):
+        x = Operation.check_if_var_else_create(x)
         return Variable(np.sin(x.value), _children=(x,), _op=Sin())
 
-    def df(self, x):
-        super().df(x)
+    @staticmethod
+    def df(x):
         return [np.cos(x.value)]
 
 
@@ -333,12 +346,13 @@ class Cos(Operation):
         self.name = 'cos'
         self.single_variable_op = True
 
-    def f(self, x):
-        super().f(x)
+    @staticmethod
+    def f(x):
+        x = Operation.check_if_var_else_create(x)
         return Variable(np.cos(x.value), _children=(x,), _op=Cos())
 
-    def df(self, x):
-        super().df(x)
+    @staticmethod
+    def df(x):
         return [-np.sin(x.value)]
 
 
@@ -346,23 +360,51 @@ if __name__ == '__main__':
     from optimizer import GD
     import matplotlib.pyplot as plt
 
-    def z_func(x, y):
-        # return (1-(x**2+y**3))*np.exp(-(x**2+y**2)/2)
-        # return x**2 + y**2
-        return - x ** 2 + y ** 2
+
+    # Defining the function to be optimized
+    def f(x):
+        return (x - 2) ** 2 + 4 * x - 2
 
 
-    class MulVariableMod(Module):
+    # autograd.Module is analog to torch.nn.Module
+    class QuadrFuncMod(Module):
         def __init__(self):
-            super(MulVariableMod, self).__init__()
-            self.x = Variable(0.5)
-            self.y = Variable(1)
-            print(f"Starting initialization: x={self.x.value}, y={self.y.value}")
-            self.params = self.parameters()
+            super(QuadrFuncMod, self).__init__()
+            self.x = Variable(-3)
 
         def forward(self):
-            # return (1-(self.x**2+self.y**3))*exp(-(self.x**2+self.y**2)/2)
-            return z_func(self.x, self.y)
+            return f(self.x)
 
-    module = MulVariableMod()
-    print(module.params)
+            # Iteratively computing forward pass, backward pass and then doing a gradient step
+
+
+    def perform_gd(epochs=100):
+        func_value_history = []
+        x_value_history = []
+
+        module = QuadrFuncMod()
+        optim = GD(params=module.collect_parameters(), lr=0.05)
+
+        for epoch in range(epochs):
+            x_value_history.append(module.x.value)
+
+            # Set the gradient of all parameters to zero
+            optim.zero_grad()
+
+            # Forward pass constructs computational graph dynamically
+            func_value = module.forward()
+
+            # Like in pytorch: simply call backward pass on optimization criterion
+            # This performs backpropagation through the computational graph
+            func_value.backward()
+
+            # Optimizer reads out gradients of all parameters and performs on gradient step
+            optim.step()
+
+            func_value_history.append(func_value.value)
+            if epoch % 25 == 0:
+                print(f"epoch: {epoch} | x: {module.x.value} | f(x): {func_value.value}")
+
+        return np.array(x_value_history), np.array(func_value_history)
+
+    x_value_history, func_value_history = perform_gd()

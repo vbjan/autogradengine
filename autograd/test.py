@@ -6,9 +6,9 @@ import torch
 class TestModule1(Module):
     def __init__(self, var_constructor, use_torch=False):
         super(TestModule1, self).__init__(var_constructor, use_torch)
-        self.a = var_constructor(2)
-        self.b = var_constructor(-3)
-        self.c = var_constructor(10)
+        self.a = var_constructor(2.)
+        self.b = var_constructor(-3.)
+        self.c = var_constructor(10.)
         self.params = self.collect_parameters()
 
     def forward(self):
@@ -26,14 +26,14 @@ class TestModule2(Module):
             self.sig = torch.nn.Sigmoid()
         else:
             self.sig = Sigmoid()
-        self.a = var_constructor(2)
-        self.b = var_constructor(1)
-        self.c = var_constructor(-3)
+        self.a = var_constructor(2.)
+        self.b = var_constructor(1.)
+        self.c = var_constructor(-3.)
         self.params = self.collect_parameters()
 
     def forward(self):
         d = self.a + self.b - self.c
-        d = self.sig(d ** 2)
+        d = self.sig(d ** 2.)
         f = self.a * self.b
         g = d + f
         return g
@@ -46,13 +46,13 @@ class TestModule3(Module):
             self.exp = torch.exp
         else:
             self.exp = autograd.Exp()
-        self.x = var_constructor(-2)
-        self.y = var_constructor(2)
+        self.x = var_constructor(-2.)
+        self.y = var_constructor(2.)
         self.params = self.collect_parameters()
 
     def forward(self):
         # return (1-(self.x**2+self.y**3))*exp(-(self.x**2+self.y**2)/2)
-        return 1 - (self.x**2+self.y**3)*self.exp(-(self.x**2+self.y**2)/2)
+        return 1. - (self.x**2+self.y**3.)*self.exp(-(self.x**2.+self.y**2.)/2.)
 
 
 def create_torch_tensor(x):
@@ -68,7 +68,6 @@ def check_gradients(module):
     output.backward()
 
     correct_func = module(create_torch_tensor, use_torch=True)
-    print(correct_func.params)
     correct_output = correct_func.forward()
     correct_output.backward()
     print(f"\nengine output: {output}, \npytorch output: {correct_output}")

@@ -1,6 +1,6 @@
 
 class GD:
-    def __init__(self, lr=0.01, params=[]):
+    def __init__(self, lr=0.01, params=None):
         self.lr = lr
         self.params = params
 
