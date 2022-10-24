@@ -9,7 +9,7 @@ class Variable:
         self._children = _children
         self._op = _op
         self.requires_grad = requires_grad
-        
+
     def __repr__(self):
         return f"Variable(value={self.value}, grad={self.grad}, _op={self._op})"
 
@@ -38,10 +38,10 @@ class Variable:
         return other + (-self)
 
     def __truediv__(self, other):
-        return self * other**(-1)
+        return self * other ** (-1)
 
     def __rtruediv__(self, other):  # other / self
-        return other * self**(-1)
+        return other * self ** (-1)
 
     def __neg__(self):
         func = Negation()
@@ -97,6 +97,33 @@ class Variable:
                 var._local_backward()
 
 
+class Module:
+    def __init__(self, var=None, use_torch=False):
+        self.var = var
+        self.use_torch = use_torch
+        self.params = []
+
+    def __repr__(self):
+        description = 'Module( '
+        for i, param in enumerate(self.params):
+            description += f'grad_{i}={float(param.grad):.2f}, '
+        return description + ' )'
+
+    def __eq__(self, other):
+        assert isinstance(other, Module)
+        for param, torch_param in zip(self.params, other.params):
+            if not math.isclose(float(param.grad), float(torch_param.grad), abs_tol=1e-5):
+                return False
+        return True
+
+    def forward(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def __call__(self, *args, **kwargs):
+        return self.forward(*args, **kwargs)
+
+
+# Just defining a bunch of operations:
 class Operation:
     def __init__(self):
         self.name = None
@@ -306,37 +333,10 @@ class Cos(Operation):
         return [-np.sin(x.value)]
 
 
-class Module:
-    def __init__(self, var=None, use_torch=False):
-        self.var = var
-        self.use_torch = use_torch
-        self.params = []
-
-    def __repr__(self):
-        description = 'Module( '
-        for i, param in enumerate(self.params):
-            description += f'grad_{i}={float(param.grad):.2f}, '
-        return description + ' )'
-
-    def __eq__(self, other):
-        assert isinstance(other, Module)
-        for param, torch_param in zip(self.params, other.params):
-            if not math.isclose(float(param.grad), float(torch_param.grad), abs_tol=1e-5):
-                return False
-        return True
-
-    def forward(self, *args, **kwargs):
-        raise NotImplementedError
-
-    def __call__(self, *args, **kwargs):
-        return self.forward(*args, **kwargs)
-
 
 if __name__ == '__main__':
-    import random
     from optimizer import GD
     import matplotlib.pyplot as plt
-    from test import check_gradients
 
 
     def z_func(x, y):
