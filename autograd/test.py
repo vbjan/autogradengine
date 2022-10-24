@@ -4,12 +4,12 @@ import torch
 
 
 class TestModule1(Module):
-    def __init__(self, var, use_torch=False):
-        super(TestModule1, self).__init__(var, use_torch)
-        self.a = var(2)
-        self.b = var(-3)
-        self.c = var(10)
-        self.params = [self.a, self.b, self.c]
+    def __init__(self, var_constructor, use_torch=False):
+        super(TestModule1, self).__init__(var_constructor, use_torch)
+        self.a = var_constructor(2)
+        self.b = var_constructor(-3)
+        self.c = var_constructor(10)
+        self.params = self.collect_parameters()
 
     def forward(self):
         e = self.a ** self.b
@@ -20,16 +20,16 @@ class TestModule1(Module):
 
 
 class TestModule2(Module):
-    def __init__(self, var, use_torch=False):
-        super(TestModule2, self).__init__(var, use_torch)
+    def __init__(self, var_constructor, use_torch=False):
+        super(TestModule2, self).__init__(var_constructor, use_torch)
         if self.use_torch:
             self.sig = torch.nn.Sigmoid()
         else:
             self.sig = Sigmoid()
-        self.a = var(2)
-        self.b = var(1)
-        self.c = var(-3)
-        self.params = [self.a, self.b, self.c]
+        self.a = var_constructor(2)
+        self.b = var_constructor(1)
+        self.c = var_constructor(-3)
+        self.params = self.collect_parameters()
 
     def forward(self):
         d = self.a + self.b - self.c
@@ -39,21 +39,20 @@ class TestModule2(Module):
         return g
 
 
-class MulVariableMod(Module):
-    def __init__(self, var, use_torch=False):
-        super(MulVariableMod, self).__init__()
+class TestModule3(Module):
+    def __init__(self, var_constructor, use_torch=False):
+        super(TestModule3, self).__init__(var_constructor, use_torch)
         if use_torch:
             self.exp = torch.exp
         else:
             self.exp = autograd.Exp()
-        self.x = var(-2)
-        self.y = var(2)
-        self.params.append(self.x)
-        self.params.append(self.y)
+        self.x = var_constructor(-2)
+        self.y = var_constructor(2)
+        self.params = self.collect_parameters()
 
     def forward(self):
         # return (1-(self.x**2+self.y**3))*exp(-(self.x**2+self.y**2)/2)
-        return (1 - (self.x**2+self.y**3))  # *self.exp(-(self.x**2+self.y**2)/2)
+        return 1 - (self.x**2+self.y**3)*self.exp(-(self.x**2+self.y**2)/2)
 
 
 def create_torch_tensor(x):
@@ -69,12 +68,13 @@ def check_gradients(module):
     output.backward()
 
     correct_func = module(create_torch_tensor, use_torch=True)
+    print(correct_func.params)
     correct_output = correct_func.forward()
     correct_output.backward()
     print(f"\nengine output: {output}, \npytorch output: {correct_output}")
-    print(f"\nengine gradients: {func} \npytorch gradients: {correct_func} ")
+    print(f"engine gradients: {func} \npytorch gradients: {correct_func} ")
     if func == correct_func:
-        print("Correct gradients!")
+        print("CORRECT gradients!")
     else:
         print("FAIL: Incorrect gradients!")
 
@@ -82,4 +82,4 @@ def check_gradients(module):
 if __name__ == '__main__':
     check_gradients(TestModule1)
     check_gradients(TestModule2)
-    check_gradients(MulVariableMod)
+    check_gradients(TestModule3)

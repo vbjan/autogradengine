@@ -1,5 +1,6 @@
 import numpy as np
 import math
+import torch
 
 
 class Variable:
@@ -98,10 +99,10 @@ class Variable:
 
 
 class Module:
-    def __init__(self, var=None, use_torch=False):
-        self.var = var
+    def __init__(self, var_constructor=Variable, use_torch=False):
+        self.var_constructor = var_constructor
         self.use_torch = use_torch
-        self.params = []
+        self.params = None
 
     def __repr__(self):
         description = 'Module( '
@@ -122,6 +123,14 @@ class Module:
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
 
+    def collect_parameters(self):
+        if self.use_torch:
+            self.params = [param for param in self.__dict__.values() if isinstance(param, torch.Tensor)]
+            return self.params
+        else:
+            self.params = [param for param in self.__dict__.values() if isinstance(param, Variable)]
+        return self.params
+
 
 # Just defining a bunch of operations:
 class Operation:
@@ -129,7 +138,7 @@ class Operation:
         self.name = None
         self.single_variable_op = False
 
-    # *args must be of type Variable
+    # *args must be of type Variable to ensure that computation graph can be built
     def f(self, *args):
         for v in args:
             assert isinstance(v, Variable)
@@ -333,11 +342,9 @@ class Cos(Operation):
         return [-np.sin(x.value)]
 
 
-
 if __name__ == '__main__':
     from optimizer import GD
     import matplotlib.pyplot as plt
-
 
     def z_func(x, y):
         # return (1-(x**2+y**3))*np.exp(-(x**2+y**2)/2)
@@ -351,47 +358,11 @@ if __name__ == '__main__':
             self.x = Variable(0.5)
             self.y = Variable(1)
             print(f"Starting initialization: x={self.x.value}, y={self.y.value}")
-            self.params.append(self.x)
-            self.params.append(self.y)
+            self.params = self.parameters()
 
         def forward(self):
             # return (1-(self.x**2+self.y**3))*exp(-(self.x**2+self.y**2)/2)
             return z_func(self.x, self.y)
 
-
-    def perform_2d_gd(module, optim, epochs=20):
-        func_value_history = []
-        x_value_history = []
-        y_value_history = []
-
-        for epoch in range(epochs):
-            x_value_history.append(module.x.value)
-            y_value_history.append(module.y.value)
-
-            optim.zero_grad()
-            func_value = module.forward()
-            func_value.backward()
-            assert (math.isclose(func_value.value, z_func(module.x.value, module.y.value), abs_tol=1e-2))
-            optim.step()
-
-            func_value_history.append(func_value.value)
-            if epoch % 2 == 0:
-                print(f"epoch: {epoch} | x: {module.x.value} | y: {module.y.value} | f(x): {func_value.value}")
-        return np.array(x_value_history), np.array(y_value_history), np.array(func_value_history)
-
     module = MulVariableMod()
-    optim = GD(params=module.params, lr=0.1)
-    x_value_history, y_value_history, func_value_history = perform_2d_gd(module, optim)
-
-    x = np.arange(-3.0, 3.0, 0.1)
-    y = np.arange(-3.0, 3.0, 0.1)
-    [X, Y] = np.meshgrid(x, y)
-    fig, ax = plt.subplots(1, 1)
-    Z = z_func(X, Y)
-    ax.contourf(X, Y, Z)
-    ax.set_title('Filled Contour Plot')
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    plt.plot(x_value_history, y_value_history, 'o')
-
-    plt.show()
+    print(module.params)
