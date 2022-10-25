@@ -161,6 +161,14 @@ class Operation:
         if isinstance(var, int) or isinstance(var, float):
             return True
 
+    @staticmethod
+    def make_into_vars(x, y):
+        if Operation.is_scalar(y):  # transform scalar to Variable with same shape to allow broadcasting
+            y = Variable(np.ones(x.value.shape) * y)
+        x = Operation.check_if_var_else_create(x)
+        y = Operation.check_if_var_else_create(y)
+        return x, y
+
 
 # Two variable operations
 class Addition(Operation):
@@ -170,10 +178,7 @@ class Addition(Operation):
 
     @staticmethod
     def f(x, y):  # cast y into tensor if needed
-        if Operation.is_scalar(y):
-            y = Variable(np.ones(x.value.shape) * y)
-        x = Operation.check_if_var_else_create(x)
-        y = Operation.check_if_var_else_create(y)
+        x, y = Operation.make_into_vars(x, y)
         if x.value.shape != y.value.shape:
             raise ValueError("Shape mismatch")
         return Variable(x.value + y.value, _children=(x, y), _op=Addition())
@@ -195,10 +200,7 @@ class Subtraction(Operation):
 
     @staticmethod
     def f(x, y):
-        if Operation.is_scalar(y):
-            y = Variable(np.ones(x.value.shape) * y)
-        x = Operation.check_if_var_else_create(x)
-        y = Operation.check_if_var_else_create(y)
+        x, y = Operation.make_into_vars(x, y)
         if x.value.shape != y.value.shape:
             raise ValueError("Shape mismatch")
         return Variable(x.value - y.value, _children=(x, y), _op=Subtraction())
@@ -220,10 +222,7 @@ class Multiplication(Operation):
 
     @staticmethod
     def f(x, y):
-        if Operation.is_scalar(y):
-            y = Variable(np.ones(x.value.shape) * y)
-        x = Operation.check_if_var_else_create(x)
-        y = Operation.check_if_var_else_create(y)
+        x, y = Operation.make_into_vars(x, y)
         if x.value.shape != y.value.shape:
             raise ValueError("Shape mismatch")
         return Variable(np.multiply(x.value, y.value), _children=(x, y), _op=Multiplication())
@@ -256,7 +255,6 @@ class Power(Operation):  # only works if power is scalar
             full_grad[0] = np.multiply(y.value, np.power(x.value, (y.value - 1.)))
         if y.requires_grad:
             full_grad[1] = np.multiply(np.power(x.value, y.value), np.log(x.value))
-        #assert(isinstance(grad, np.ndarray) for grad in full_grad)
         return full_grad
 
 

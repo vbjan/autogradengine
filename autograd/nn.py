@@ -6,11 +6,12 @@ class Linear(Module):
     def __init__(self, dims=(), var_constructor=Variable, use_torch=False):
         super(Linear, self).__init__(var_constructor, use_torch)
         self.weights = var_constructor(np.random.rand(*dims))
+        self.bias = var_constructor(np.random.rand(dims[0], 1))
         self.params = self.collect_parameters()
         self._matmul = MatrixMultiplication()
 
     def forward(self, x):
-        return self._matmul(self.weights, x)
+        return self._matmul(self.weights, x) + self.bias
 
 
 class Perceptron(Module):
@@ -24,9 +25,6 @@ class Perceptron(Module):
 
     def forward(self, x):
         return self.sigmoid(self.linear(x))
-
-
-
 
 
 if __name__ == "__main__":
