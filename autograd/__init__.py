@@ -5,8 +5,12 @@ import torch
 
 class Variable:
     def __init__(self, value, _children=(), _op=None, requires_grad=True):
-        self.value = np.array(value, dtype=float)  # should be of type np.array
-        self.grad = 0
+        if Operation.is_scalar(value):
+            self.value = np.array([value], dtype=float)
+        else:
+            self.value = np.array(value, dtype=float)  # should be of type np.array
+        self.shape = self.value.shape
+        self.grad = np.array([0], dtype=float)
         self._children = _children
         self._op = _op
         self.requires_grad = requires_grad
@@ -66,8 +70,8 @@ class Variable:
             self._children[0].grad += gradient[0] * self.grad
         else:
             gradient = self._op.df(self._children[0], self._children[1])
-            self._children[0].grad += gradient[0] * self.grad
-            self._children[1].grad += gradient[1] * self.grad
+            self._children[0].grad += np.matmul(self.grad, gradient[0])
+            self._children[1].grad += np.matmul(gradient[1], self.grad)
 
     def backward(self):
         top_var_list = []
@@ -83,7 +87,7 @@ class Variable:
 
         topological_sort(self)
 
-        self.grad = 1
+        self.grad = np.array([1], dtype=float)
         for var in reversed(top_var_list):
             if var.requires_grad and var._op is not None:
                 var._local_backward()
@@ -96,10 +100,10 @@ class Module:
         self.params = None
 
     def __repr__(self):
-        description = 'Module( '
+        description = 'Module(\n'
         for i, param in enumerate(self.params):
-            description += f'grad_{i}={float(param.grad):.2f}, '
-        return description + ' )'
+            description += f'grad_{i}={param.grad}, '
+        return description + '\n)'
 
     def __eq__(self, other):
         assert isinstance(other, Module)
@@ -117,13 +121,14 @@ class Module:
     def collect_parameters(self):
         if self.use_torch:
             self.params = [param for param in self.__dict__.values() if isinstance(param, torch.Tensor)]
-            return self.params
         else:
             self.params = [param for param in self.__dict__.values() if isinstance(param, Variable)]
         return self.params
 
 
 # Just defining a bunch of operations:
+
+# Elementwise operation taking two inputs
 class Operation:
     def __init__(self):
         self.name = None
@@ -151,6 +156,11 @@ class Operation:
             other = Variable(other, requires_grad=False)
         return other
 
+    @staticmethod
+    def is_scalar(var):
+        if isinstance(var, int) or isinstance(var, float):
+            return True
+
 
 # Two variable operations
 class Addition(Operation):
@@ -159,7 +169,9 @@ class Addition(Operation):
         self.name = '+'
 
     @staticmethod
-    def f(x, y):
+    def f(x, y):  # cast y into tensor if needed
+        if Operation.is_scalar(y):
+            y = Variable(np.ones(x.value.shape) * y)
         x = Operation.check_if_var_else_create(x)
         y = Operation.check_if_var_else_create(y)
         if x.value.shape != y.value.shape:
@@ -168,7 +180,7 @@ class Addition(Operation):
 
     @staticmethod
     def df(x, y):
-        full_grad = [0, 0]
+        full_grad = [np.array([0.]), np.array([0.])]
         if x.requires_grad:
             full_grad[0] = np.ones(x.value.shape)
         if y.requires_grad:
@@ -183,6 +195,8 @@ class Subtraction(Operation):
 
     @staticmethod
     def f(x, y):
+        if Operation.is_scalar(y):
+            y = Variable(np.ones(x.value.shape) * y)
         x = Operation.check_if_var_else_create(x)
         y = Operation.check_if_var_else_create(y)
         if x.value.shape != y.value.shape:
@@ -191,7 +205,7 @@ class Subtraction(Operation):
 
     @staticmethod
     def df(x, y):
-        full_grad = [0, 0]
+        full_grad = [np.array([0.]), np.array([0.])]
         if x.requires_grad:
             full_grad[0] = np.ones(x.value.shape)
         if y.requires_grad:
@@ -206,6 +220,8 @@ class Multiplication(Operation):
 
     @staticmethod
     def f(x, y):
+        if Operation.is_scalar(y):
+            y = Variable(np.ones(x.value.shape) * y)
         x = Operation.check_if_var_else_create(x)
         y = Operation.check_if_var_else_create(y)
         if x.value.shape != y.value.shape:
@@ -214,7 +230,7 @@ class Multiplication(Operation):
 
     @staticmethod
     def df(x, y):
-        full_grad = [0, 0]
+        full_grad = [np.array([0.]), np.array([0.])]
         if x.requires_grad:
             full_grad[0] = y.value
         if y.requires_grad:
@@ -235,15 +251,16 @@ class Power(Operation):  # only works if power is scalar
 
     @staticmethod
     def df(x, y):
-        full_grad = [0, 0]
+        full_grad = [np.array([0.]), np.array([0.])]
         if x.requires_grad:
             full_grad[0] = np.multiply(y.value, np.power(x.value, (y.value - 1.)))
         if y.requires_grad:
             full_grad[1] = np.multiply(np.power(x.value, y.value), np.log(x.value))
+        #assert(isinstance(grad, np.ndarray) for grad in full_grad)
         return full_grad
 
 
-# Single variable operations:
+# Single variable element wise operations:
 class Negation(Operation):
     def __init__(self):
         super(Negation, self).__init__()
@@ -257,7 +274,9 @@ class Negation(Operation):
 
     @staticmethod
     def df(x):
-        return [-np.ones(x.value.shape)]
+        if x.requires_grad:
+            return [-np.ones(x.value.shape)]
+        return [np.array([0.])]
 
 
 class Sigmoid(Operation):
@@ -273,7 +292,9 @@ class Sigmoid(Operation):
 
     @staticmethod
     def df(x):
-        return [np.divide(np.exp(x.value), np.power((1 + np.exp(x.value)), 2))]
+        if x.requires_grad:
+            return [np.divide(np.exp(x.value), np.power((1 + np.exp(x.value)), 2))]
+        return [np.array([0.])]
 
 
 class Exp(Operation):
@@ -289,7 +310,9 @@ class Exp(Operation):
 
     @staticmethod
     def df(x):
-        return [np.exp(x.value)]
+        if x.requires_grad:
+            return [np.exp(x.value)]
+        return [np.array([0.])]
 
 
 class Log(Operation):
@@ -305,7 +328,9 @@ class Log(Operation):
 
     @staticmethod
     def df(x):
-        return [np.divide(1, x.value)]
+        if x.requires_grad:
+            return [np.divide(1, x.value)]
+        return [np.array([0.])]
 
 
 class Tanh(Operation):
@@ -321,7 +346,9 @@ class Tanh(Operation):
 
     @staticmethod
     def df(x):
-        return [1 - np.power(np.tanh(x.value), 2)]
+        if x.requires_grad:
+            return [np.subtract(1, np.power(np.tanh(x.value), 2))]
+        return [np.array([0.])]
 
 
 class Sin(Operation):
@@ -337,7 +364,9 @@ class Sin(Operation):
 
     @staticmethod
     def df(x):
-        return [np.cos(x.value)]
+        if x.requires_grad:
+            return [np.cos(x.value)]
+        return [np.array([0.])]
 
 
 class Cos(Operation):
@@ -353,58 +382,64 @@ class Cos(Operation):
 
     @staticmethod
     def df(x):
-        return [-np.sin(x.value)]
+        if x.requires_grad:
+            return [-np.sin(x.value)]
+        return [np.array([0.])]
+
+
+# Matrix operations:
+class MatrixMultiplication(Operation):
+    def __init__(self):
+        super(MatrixMultiplication, self).__init__()
+        self.name = '@'
+        self.single_variable_op = False
+
+    @staticmethod
+    def f(x, y):
+        x = Operation.check_if_var_else_create(x)
+        y = Operation.check_if_var_else_create(y)
+        if x.value.shape[1] != y.value.shape[0]:
+            raise ValueError(f"Shape mismatch x.shape={x.value.shape} and y.shape={y.value.shape}")
+        return Variable(np.matmul(x.value, y.value), _children=(x, y), _op=MatrixMultiplication())
+
+    @staticmethod
+    def df(x, y):
+        full_grad = [0, 0]
+        if x.requires_grad:
+            full_grad[0] = y.value.transpose()
+        if y.requires_grad:
+            full_grad[1] = x.value.transpose()
+        return full_grad
 
 
 if __name__ == '__main__':
-    from optimizer import GD
-    import matplotlib.pyplot as plt
+    import time
+    # Defining test function
+    def gradient_test_f(x):
+        return ((x - 3.) ** 2. / x - 1) ** (x - 1.)
 
+    # Compute gradient df/dx at x=1 using torch
+    torch_x = torch.Tensor([1.])
+    torch_x.requires_grad = True
 
-    # Defining the function to be optimized
-    def f(x):
-        return (x - 2) ** 2 + 4 * x - 2
+    torch_time = time.time()
+    torch_y = gradient_test_f(torch_x)
+    torch_y.backward()
+    torch_time = time.time() - torch_time
 
+    torch_grad = torch_x.grad
 
-    # autograd.Module is analog to torch.nn.Module
-    class QuadrFuncMod(Module):
-        def __init__(self):
-            super(QuadrFuncMod, self).__init__()
-            self.x = Variable(-3)
+    # Compute gradient df/dx at x=1 using autograd
+    autograd_x = Variable([1.])
 
-        def forward(self):
-            return f(self.x)
+    autograd_time = time.time()
+    autograd_y = gradient_test_f(autograd_x)
+    autograd_y.backward()
+    autograd_time = time.time() - autograd_time
 
-            # Iteratively computing forward pass, backward pass and then doing a gradient step
+    autograd_grad = autograd_x.grad
 
-
-    def perform_gd(epochs=100):
-        func_value_history = []
-        x_value_history = []
-
-        module = QuadrFuncMod()
-        optim = GD(params=module.collect_parameters(), lr=0.05)
-
-        for epoch in range(epochs):
-            x_value_history.append(module.x.value)
-
-            # Set the gradient of all parameters to zero
-            optim.zero_grad()
-
-            # Forward pass constructs computational graph dynamically
-            func_value = module.forward()
-
-            # Like in pytorch: simply call backward pass on optimization criterion
-            # This performs backpropagation through the computational graph
-            func_value.backward()
-
-            # Optimizer reads out gradients of all parameters and performs on gradient step
-            optim.step()
-
-            func_value_history.append(func_value.value)
-            if epoch % 25 == 0:
-                print(f"epoch: {epoch} | x: {module.x.value} | f(x): {func_value.value}")
-
-        return np.array(x_value_history), np.array(func_value_history)
-
-    x_value_history, func_value_history = perform_gd()
+    print(
+        f"torch gradient {torch_grad.item():.3f} in {torch_time:.5f}s\nautograd gradient: {autograd_grad.item():.3f} in {autograd_time:.5f}s")
+    if math.isclose(torch_grad, autograd_grad, abs_tol=1e-5):
+        print("\nThe packages agree!")
