@@ -10,4 +10,5 @@ class GD:
 
     def step(self):
         for param in self.params:
-            param.value -= self.lr * param.grad
+            # all gradients are saved as Jacobian matrices which is why we need to transpose
+            param.value -= self.lr * param.grad.transpose()

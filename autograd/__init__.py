@@ -6,11 +6,12 @@ import torch
 class Variable:
     def __init__(self, value, _children=(), _op=None, requires_grad=True):
         if Operation.is_scalar(value):
-            self.value = np.array([value], dtype=float)
+            self.value = np.array([[value]], dtype=float)
         else:
-            self.value = np.array(value, dtype=float)  # should be of type np.array
+            self.value = np.array(value, dtype=float)
         self.shape = self.value.shape
-        self.grad = np.array([0], dtype=float)
+        # all gradients are saved as Jacobian matrices which is why we need to transpose
+        self.grad = np.zeros(self.shape).transpose()
         self._children = _children
         self._op = _op
         self.requires_grad = requires_grad
@@ -63,15 +64,27 @@ class Variable:
         else:
             return 0
 
+    def sum(self):
+        return Sum.f(self)
+
+    def transpose(self):
+        self.value = self.value.transpose()
+        self.grad = self.grad.transpose()
+        return self
+
     def _local_backward(self):
         assert self._op is not None
         if self._op.single_variable_op == True:
             gradient = self._op.df(self._children[0])
-            self._children[0].grad += gradient[0] * self.grad
+            self._children[0].grad += np.matmul(self.grad, gradient[0])
         else:
             gradient = self._op.df(self._children[0], self._children[1])
-            self._children[0].grad += np.matmul(self.grad, gradient[0])
-            self._children[1].grad += np.matmul(gradient[1], self.grad)
+            if self._op.name == 'matmul':  # formulas are in the form of multiplying jacobians
+                self._children[0].grad += np.matmul(self.grad.transpose(), gradient[0]).transpose()
+                self._children[1].grad += np.matmul(self.grad, gradient[1])
+            else:
+                self._children[0].grad += np.matmul(self.grad, gradient[0])
+                self._children[1].grad += np.matmul(self.grad, gradient[1])
 
     def backward(self):
         top_var_list = []
@@ -87,7 +100,7 @@ class Variable:
 
         topological_sort(self)
 
-        self.grad = np.array([1], dtype=float)
+        self.grad = np.identity(self.shape[0])
         for var in reversed(top_var_list):
             if var.requires_grad and var._op is not None:
                 var._local_backward()
@@ -108,7 +121,9 @@ class Module:
     def __eq__(self, other):
         assert isinstance(other, Module)
         for param, torch_param in zip(self.params, other.params):
-            if not math.isclose(float(param.grad), float(torch_param.grad), abs_tol=1e-5):
+            # Convert torch grad to np array to make it comparable
+            _torch_grad = np.array(torch_param.grad)
+            if not np.allclose(param.grad, _torch_grad, atol=1e-04):
                 return False
         return True
 
@@ -122,7 +137,7 @@ class Module:
         if self.use_torch:
             self.params = [param for param in self.__dict__.values() if isinstance(param, torch.Tensor)]
         else:
-            self.params = [param for param in self.__dict__.values() if isinstance(param, Variable)]
+            self.params = [param for param in self.__dict__.values() if isinstance(param, Variable) and param.requires_grad]
         return self.params
 
 
@@ -165,6 +180,7 @@ class Operation:
     def make_into_vars(x, y):
         if Operation.is_scalar(y):  # transform scalar to Variable with same shape to allow broadcasting
             y = Variable(np.ones(x.value.shape) * y)
+            y.grad = np.zeros(y.value.shape).transpose()
         x = Operation.check_if_var_else_create(x)
         y = Operation.check_if_var_else_create(y)
         return x, y
@@ -185,11 +201,12 @@ class Addition(Operation):
 
     @staticmethod
     def df(x, y):
-        full_grad = [np.array([0.]), np.array([0.])]
+        shape = x.value.shape[0]
+        full_grad = [np.zeros((shape, shape)), np.zeros((shape, shape))]
         if x.requires_grad:
-            full_grad[0] = np.ones(x.value.shape)
+            full_grad[0] = np.identity(shape)
         if y.requires_grad:
-            full_grad[1] = np.ones(y.value.shape)
+            full_grad[1] = np.identity(shape)
         return full_grad
 
 
@@ -207,11 +224,12 @@ class Subtraction(Operation):
 
     @staticmethod
     def df(x, y):
-        full_grad = [np.array([0.]), np.array([0.])]
+        shape = x.value.shape[0]
+        full_grad = [np.zeros((shape, shape)), np.zeros((shape, shape))]
         if x.requires_grad:
-            full_grad[0] = np.ones(x.value.shape)
+            full_grad[0] = np.identity(shape)
         if y.requires_grad:
-            full_grad[1] = -np.ones(y.value.shape)
+            full_grad[1] = -np.identity(shape)
         return full_grad
 
 
@@ -228,12 +246,13 @@ class Multiplication(Operation):
         return Variable(np.multiply(x.value, y.value), _children=(x, y), _op=Multiplication())
 
     @staticmethod
-    def df(x, y):
-        full_grad = [np.array([0.]), np.array([0.])]
+    def df(x, y):  # NOTE: derivatives work only for scalars and vectors not matrices!!!
+        shape = x.value.shape[0]
+        full_grad = [np.zeros((shape, shape)), np.zeros((shape, shape))]
         if x.requires_grad:
-            full_grad[0] = y.value
+            full_grad[0] = np.diag(y.value.reshape(-1))
         if y.requires_grad:
-            full_grad[1] = x.value
+            full_grad[1] = np.diag(x.value.reshape(-1))
         return full_grad
 
 
@@ -246,11 +265,14 @@ class Power(Operation):  # only works if power is scalar
     def f(x, y):
         x = Operation.check_if_var_else_create(x)
         y = Operation.check_if_var_else_create(y)
+        assert(max(y.shape) == 1)  # only works if exponent is scalar!
         return Variable(np.power(x.value, y.value), _children=(x, y), _op=Power())
 
     @staticmethod
     def df(x, y):
-        full_grad = [np.array([0.]), np.array([0.])]
+        shape = x.value.shape[0]
+        full_grad = [np.zeros((shape, shape)), np.array([0.])]
+        assert(max(y.shape) == 1)  # only works if exponent is scalar!
         if x.requires_grad:
             full_grad[0] = np.multiply(y.value, np.power(x.value, (y.value - 1.)))
         if y.requires_grad:
@@ -272,9 +294,10 @@ class Negation(Operation):
 
     @staticmethod
     def df(x):
+        shape = x.value.shape[0]
         if x.requires_grad:
-            return [-np.ones(x.value.shape)]
-        return [np.array([0.])]
+            return [-np.identity(shape)]
+        return [np.zeros((shape, shape))]
 
 
 class Sigmoid(Operation):
@@ -291,8 +314,10 @@ class Sigmoid(Operation):
     @staticmethod
     def df(x):
         if x.requires_grad:
-            return [np.divide(np.exp(x.value), np.power((1 + np.exp(x.value)), 2))]
-        return [np.array([0.])]
+            return [np.diag(np.divide(np.exp(x.value), np.power((1 + np.exp(x.value)), 2)).reshape(-1))]
+        else:
+            shape = x.value.shape[0]
+            return [np.zeros((shape, shape))]
 
 
 class Exp(Operation):
@@ -309,8 +334,10 @@ class Exp(Operation):
     @staticmethod
     def df(x):
         if x.requires_grad:
-            return [np.exp(x.value)]
-        return [np.array([0.])]
+            return [np.diag(np.exp(x.value).reshape(-1))]
+        else:
+            shape = x.value.shape[0]
+            return [np.zeros((shape, shape))]
 
 
 class Log(Operation):
@@ -327,8 +354,10 @@ class Log(Operation):
     @staticmethod
     def df(x):
         if x.requires_grad:
-            return [np.divide(1, x.value)]
-        return [np.array([0.])]
+            return [np.diag(np.divide(1, x.value).reshape(-1))]
+        else:
+            shape = x.value.shape[0]
+            return [np.zeros((shape, shape))]
 
 
 class Tanh(Operation):
@@ -345,8 +374,10 @@ class Tanh(Operation):
     @staticmethod
     def df(x):
         if x.requires_grad:
-            return [np.subtract(1, np.power(np.tanh(x.value), 2))]
-        return [np.array([0.])]
+            return [np.diag(np.subtract(1, np.power(np.tanh(x.value), 2)).reshape(-1))]
+        else:
+            shape = x.value.shape[0]
+            return [np.zeros((shape, shape))]
 
 
 class Sin(Operation):
@@ -363,8 +394,10 @@ class Sin(Operation):
     @staticmethod
     def df(x):
         if x.requires_grad:
-            return [np.cos(x.value)]
-        return [np.array([0.])]
+            return [np.diag(np.cos(x.value).reshape(-1))]
+        else:
+            shape = x.value.shape[0]
+            return [np.zeros((shape, shape))]
 
 
 class Cos(Operation):
@@ -381,15 +414,37 @@ class Cos(Operation):
     @staticmethod
     def df(x):
         if x.requires_grad:
-            return [-np.sin(x.value)]
-        return [np.array([0.])]
+            return [-np.diag(np.sin(x.value.squeeze()))]
+        else:
+            shape = x.value.shape[0]
+            return [np.zeros((shape, shape))]
+
+
+class ReLu(Operation):
+    def __init__(self):
+        super(ReLu, self).__init__()
+        self.name = 'relu'
+        self.single_variable_op = True
+
+    @staticmethod
+    def f(x):
+        x = Operation.check_if_var_else_create(x)
+        return Variable(np.maximum(x.value, 0), _children=(x,), _op=ReLu())
+
+    @staticmethod
+    def df(x):
+        if x.requires_grad:
+            return [np.diag(np.greater(x.value, 0).astype(int).reshape(-1))]
+        else:
+            shape = x.value.shape[0]
+            return [np.zeros((shape, shape))]
 
 
 # Matrix operations:
 class MatrixMultiplication(Operation):
     def __init__(self):
         super(MatrixMultiplication, self).__init__()
-        self.name = '@'
+        self.name = 'matmul'
         self.single_variable_op = False
 
     @staticmethod
@@ -402,42 +457,54 @@ class MatrixMultiplication(Operation):
 
     @staticmethod
     def df(x, y):
-        full_grad = [0, 0]
+        full_jacobian = [np.zeros(y.value.transpose().shape), np.zeros(x.value.shape)]
         if x.requires_grad:
-            full_grad[0] = y.value.transpose()
+            full_jacobian[0] = y.value.transpose()
         if y.requires_grad:
-            full_grad[1] = x.value.transpose()
-        return full_grad
+            full_jacobian[1] = x.value
+        return full_jacobian
+
+
+class Sum(Operation):
+    def __init__(self):
+        super(Sum, self).__init__()
+        self.name = 'sum'
+        self.single_variable_op = True
+
+    @staticmethod
+    def f(x):
+        x = Operation.check_if_var_else_create(x)
+        return Variable(np.sum(x.value), _children=(x,), _op=Sum())
+
+    @staticmethod
+    def df(x):
+        if x.requires_grad:
+            return [np.ones(x.value.shape).transpose()]
+        else:
+            return [np.array([0.])]
+
+
+class MSELoss(Operation):
+    def __init__(self):
+        super(MSELoss, self).__init__()
+        self.name = 'mse'
+        self.single_variable_op = False
+
+    @staticmethod
+    def f(x, y):
+        x = Operation.check_if_var_else_create(x)
+        y = Operation.check_if_var_else_create(y)
+        return Variable(np.sum(np.power(x.value - y.value, 2))/x.value.shape[0], _children=(x, y), _op=MSELoss())
+
+    @staticmethod
+    def df(x, y):
+        full_jacobian = [np.zeros(x.value.transpose().shape), np.zeros(x.value.transpose().shape)]
+        if x.requires_grad:
+            full_jacobian[0] = 2/x.value.shape[0] * (x.value - y.value).transpose()
+        if y.requires_grad:
+            full_jacobian[1] = -2/x.value.shape[0] * (x.value - y.value).transpose()
+        return full_jacobian
 
 
 if __name__ == '__main__':
-    import time
-    # Defining test function
-    def gradient_test_f(x):
-        return ((x - 3.) ** 2. / x - 1) ** (x - 1.)
-
-    # Compute gradient df/dx at x=1 using torch
-    torch_x = torch.Tensor([1.])
-    torch_x.requires_grad = True
-
-    torch_time = time.time()
-    torch_y = gradient_test_f(torch_x)
-    torch_y.backward()
-    torch_time = time.time() - torch_time
-
-    torch_grad = torch_x.grad
-
-    # Compute gradient df/dx at x=1 using autograd
-    autograd_x = Variable([1.])
-
-    autograd_time = time.time()
-    autograd_y = gradient_test_f(autograd_x)
-    autograd_y.backward()
-    autograd_time = time.time() - autograd_time
-
-    autograd_grad = autograd_x.grad
-
-    print(
-        f"torch gradient {torch_grad.item():.3f} in {torch_time:.5f}s\nautograd gradient: {autograd_grad.item():.3f} in {autograd_time:.5f}s")
-    if math.isclose(torch_grad, autograd_grad, abs_tol=1e-5):
-        print("\nThe packages agree!")
+    exit()
