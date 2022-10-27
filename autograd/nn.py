@@ -1,4 +1,4 @@
-from autograd import Variable, Module, MatrixMultiplication, Sigmoid
+from autograd import Variable, Module, MatrixMultiplication, Tanh, Sigmoid
 import numpy as np
 
 
@@ -17,10 +17,26 @@ class Perceptron(Module):
     def __init__(self, output_size, input_size):
         super(Perceptron, self).__init__()
         self.linear = Linear((output_size, input_size))
-        self.sigmoid = Sigmoid()
+        # self.acti = Sigmoid()
+        self.acti = Tanh()
 
     def forward(self, _x):
-        return self.sigmoid(self.linear(_x))
+        return self.acti(self.linear(_x))
+
+
+class Dataset:
+    def __init__(self, x_data, y_data):
+        self.x_data = x_data
+        self.y_data = y_data
+
+    def get_zip(self):
+        return zip(self.x_data, self.y_data)
+
+    def __len__(self):
+        return len(self.x_data)
+
+    def __repr__(self):
+        return f"Dataset(\nx_data=\n{self.x_data}, \ny_data=\n{self.y_data})"
 
 
 if __name__ == "__main__":

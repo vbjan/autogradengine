@@ -134,6 +134,12 @@ class Module:
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
 
+    def forward_dataset(self, dataset, loss_function):
+        loss = 0
+        for x, y in dataset.get_zip():
+            loss += loss_function(self(x), y)
+        return loss/len(dataset)
+
     def collect_parameters(self):
         if self.use_torch:
             # This only works for Modules that do not have any torch.nn.Modules
@@ -499,15 +505,15 @@ class MSELoss(Operation):
     def f(x, y):
         x = Operation.check_if_var_else_create(x)
         y = Operation.check_if_var_else_create(y)
-        return Variable(np.sum(np.power(x.value - y.value, 2))/x.value.shape[0], _children=(x, y), _op=MSELoss())
+        return Variable(np.sum(np.power(x.value - y.value, 2)), _children=(x, y), _op=MSELoss())
 
     @staticmethod
     def df(x, y):
         full_jacobian = [np.zeros(x.value.transpose().shape), np.zeros(x.value.transpose().shape)]
         if x.requires_grad:
-            full_jacobian[0] = 2/x.value.shape[0] * (x.value - y.value).transpose()
+            full_jacobian[0] = 2 * (x.value - y.value).transpose()
         if y.requires_grad:
-            full_jacobian[1] = -2/x.value.shape[0] * (x.value - y.value).transpose()
+            full_jacobian[1] = -2 * (x.value - y.value).transpose()
         return full_jacobian
 
 
