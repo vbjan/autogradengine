@@ -110,17 +110,18 @@ class Module:
     def __init__(self, var_constructor=Variable, use_torch=False):
         self.var_constructor = var_constructor
         self.use_torch = use_torch
-        self.params = None
 
     def __repr__(self):
+        params = self.collect_parameters()
         description = 'Module(\n'
-        for i, param in enumerate(self.params):
+        for i, param in enumerate(params):
             description += f'grad_{i}={param.grad}, '
         return description + '\n)'
 
-    def __eq__(self, other):
+    def __eq__(self, other):  # To compare autograd Modules with torch.nn.Modules
         assert isinstance(other, Module)
-        for param, torch_param in zip(self.params, other.params):
+        params = self.collect_parameters()
+        for param, torch_param in zip(params, other.collect_parameters()):
             # Convert torch grad to np array to make it comparable
             _torch_grad = np.array(torch_param.grad)
             if not np.allclose(param.grad, _torch_grad, atol=1e-04):
@@ -135,10 +136,14 @@ class Module:
 
     def collect_parameters(self):
         if self.use_torch:
-            self.params = [param for param in self.__dict__.values() if isinstance(param, torch.Tensor)]
+            # This only works for Modules that do not have any torch.nn.Modules
+            params = [param for param in self.__dict__.values() if isinstance(param, torch.Tensor)]
         else:
-            self.params = [param for param in self.__dict__.values() if isinstance(param, Variable) and param.requires_grad]
-        return self.params
+            # Automatically collect all variables that are attributes of the module
+            module_params = set(*tuple(param.collect_parameters() for param in self.__dict__.values() if isinstance(param, Module)))
+            self_params = set(tuple(param for param in self.__dict__.values() if isinstance(param, Variable) and param.requires_grad))
+            params = self_params | module_params  # union of sets
+        return params
 
 
 # Just defining a bunch of operations:
