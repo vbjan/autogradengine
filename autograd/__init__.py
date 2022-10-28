@@ -74,7 +74,7 @@ class Variable:
 
     def _local_backward(self):
         assert self._op is not None
-        if self._op.single_variable_op == True:
+        if self._op.single_variable_op is True:
             gradient = self._op.df(self._children[0])
             self._children[0].grad += np.matmul(self.grad, gradient[0])
         else:

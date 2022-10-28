@@ -1,4 +1,4 @@
-from autograd import Variable, Module, MatrixMultiplication, Tanh, Sigmoid
+from . import Variable, Module, MatrixMultiplication, Tanh, Sigmoid
 import numpy as np
 
 
