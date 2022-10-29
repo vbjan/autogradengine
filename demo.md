@@ -182,7 +182,7 @@ pylab.show()
 
 
     
-![png](output_7_0.png)
+![png](imgs/output_7_0.png)
     
 
 
@@ -302,7 +302,7 @@ plt.show()
 
 
     
-![png](output_13_0.png)
+![png](imgs/output_13_0.png)
     
 
 
@@ -339,7 +339,7 @@ plt.show()
 
 
     
-![png](output_16_0.png)
+![png](imgs/output_16_0.png)
     
 
 
@@ -451,7 +451,7 @@ plt.show()
 
 
     
-![png](output_19_0.png)
+![png](imgs/output_19_0.png)
     
 
 
@@ -495,7 +495,7 @@ plt.show()
 
 
     
-![png](output_22_0.png)
+![png](imgs/output_22_0.png)
     
 
 
