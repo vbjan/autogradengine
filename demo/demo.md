@@ -190,7 +190,7 @@ The visualization shows that the algorithm converged exponentially and converges
 
 # Multivariate Minimization
 In the follwing, the autograd engine is applied to a multivariate minimization problem. The basic principle is the same as in the previous example, however here the optimization regime is $\mathbb R^2$, as we optimize over $x$ and $y$. The minimization problem will be 
-> $$\star x, \star y = \text{argmin} \left[{((x^2+y^3)-1) \cdot \exp{(-0.5{(x^2+y^2)})}}\right],$$
+> $$ x^\star,  y^\star = \text{argmin} \left[{((x^2+y^3)-1) \cdot \exp{(-0.5{(x^2+y^2)})}}\right],$$
 
 which is non-convex.
 
@@ -316,7 +316,7 @@ We train it to minimize the MSE loss between its prediction $\hat y = f_{w,b}(x)
 > $$l(\hat y, y) = (\hat y - y)^2 = \left(\tanh(w^Tx+b) - y\right)^2.$$
 
 So we finally have the optimization problem
-> $$w^*, b^* = \text{argmin}_{w, b} \left[ \sum_{x \in X, y \in Y}\left(\tanh(w^Tx+b) - y\right)^2\right]$$.
+> $$ w^\star, b^\star = \text{argmin}_{w, b} \left[ \sum_{x \in X, y \in Y}\left(\tanh(w^Tx+b) - y\right)^2\right] $$.
 
 The gradients of the objective will be computed with autograd and the model then trained with backpropagation.
 
