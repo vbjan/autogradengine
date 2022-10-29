@@ -4,6 +4,11 @@ import numpy as np
 
 class Linear(Module):
     def __init__(self, dims=(), var_constructor=Variable, use_torch=False):
+        """
+        Autograd Module to create a linear layer
+        $$f(x) = Wx + b$$
+        @param dims: (output_size, input_size)
+        """
         super(Linear, self).__init__(var_constructor, use_torch)
         self.weight = var_constructor(np.random.rand(*dims))
         self.bias = var_constructor(np.random.rand(dims[0], 1))
@@ -15,6 +20,9 @@ class Linear(Module):
 
 class Perceptron(Module):
     def __init__(self, output_size, input_size):
+        """
+        Autograd Module to create a perceptron
+        """
         super(Perceptron, self).__init__()
         self.linear = Linear((output_size, input_size))
         # self.acti = Sigmoid()
@@ -26,6 +34,13 @@ class Perceptron(Module):
 
 class Dataset:
     def __init__(self, x_data, y_data):
+        """
+        Autograd Dataset - allows to use the forward_dataset method of a Module, to pass all elements of the dataset
+        through the module
+
+        @param x_data: np.array of shape (n_samples, m, n) - with n = 1 for vector input
+        @param y_data: np.array of shape (n_samples, m, n) - with n = 1 for vector input
+        """
         self.x_data = x_data
         self.y_data = y_data
 

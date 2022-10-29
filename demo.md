@@ -316,8 +316,6 @@ We train it to minimize the MSE loss between its prediction $\hat y = f_{w,b}(x)
 > $$l(\hat y, y) = (\hat y - y)^2 = \left(\tanh(w^Tx+b) - y\right)^2.$$
 
 So we finally have the optimization problem
-> $$ w^\star, b^\star = \text{argmin}_{w, b} \left[ \sum_{x \in X, y \in Y}\left(\tanh(w^Tx+b) - y\right)^2 \right] $$
-
 > $$ w^\star, b^\star = \underset{w, b}{\operatorname{argmin}}  \left[ \sum_{x \in X, y \in Y}\left(\tanh(w^Tx+b) - y\right)^2 \right] $$
 
 

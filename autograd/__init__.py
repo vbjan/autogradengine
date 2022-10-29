@@ -1,10 +1,28 @@
+"""
+*autograd engine*
+
+@author: Jan-Philipp von Bassewitz
+@date: 2022-10-29
+"""
+
 import numpy as np
-import math
 import torch
 
 
 class Variable:
+    """
+    Analog to torch.Tensor -> this is where the magic happens. All operations performed between Variables are represented
+    as a comutation graph that is constructed dynamically. The graph is traversed backwards to calculate the gradients
+    of all Variables with requires_grad=True. Each Variable is a Node in the graph and contains the references of its
+    children, to allow for easy traversal during backpropagation.
+    """
     def __init__(self, value, _children=(), _op=None, requires_grad=True):
+        """
+        @param value: value of Variable as np.array of shape (m, n)
+        @param _children: children of Variable in computational graph
+        @param _op: reference to Operation that created Variable in computational graph
+        @param requires_grad: bool indicating whether gradients should be calculated for Variable
+        """
         if Operation.is_scalar(value):
             self.value = np.array([[value]], dtype=float)
         else:
@@ -16,13 +34,55 @@ class Variable:
         self._op = _op
         self.requires_grad = requires_grad
 
+    def _local_backward(self):
+        """
+        Calculates the local gradient of self with respect to its children
+        """
+        assert self._op is not None
+        if self._op.single_variable_op is True:
+            gradient = self._op.df(self._children[0])
+            self._children[0].grad += np.matmul(self.grad, gradient[0])
+        else:
+            gradient = self._op.df(self._children[0], self._children[1])
+            if self._op.name == 'matmul':  # formulas are in the form of multiplying jacobians
+                self._children[0].grad += np.matmul(self.grad.transpose(), gradient[0]).transpose()
+                self._children[1].grad += np.matmul(self.grad, gradient[1])
+            else:
+                self._children[0].grad += np.matmul(self.grad, gradient[0])
+                self._children[1].grad += np.matmul(self.grad, gradient[1])
+
+    def backward(self):
+        """
+        Backpropagates the gradient of self with respect to all Variables with requires_grad=True through the
+        computational graph
+        """
+        top_var_list = []
+        visited = set()
+
+        # do topological sort to allow iteration through variables to calculated local gradients of each variable
+        def topological_sort(var):
+            if var not in visited:
+                visited.add(var)
+                for child in var._children:
+                    topological_sort(child)
+                top_var_list.append(var)
+
+        topological_sort(self)
+
+        self.grad = np.identity(self.shape[0])
+        for var in reversed(top_var_list):
+            if var.requires_grad and var._op is not None:
+                var._local_backward()
+
     def __repr__(self):
         return f"Variable(value={self.value}, grad={self.grad}, _op={self._op})"
 
+    # OPERATOR OVERLOADING FOR Variable class
     # element-wise addition
     def __add__(self, other):
         return Addition.f(self, other)
 
+    # used to allow operations like: int(1) + Variable(2)
     def __radd__(self, other):
         return self + other
 
@@ -54,6 +114,7 @@ class Variable:
     def __rtruediv__(self, other):  # other / self
         return other * self ** -1.
 
+    # useful methods to make manipulation of Variables easier
     def sign(self):
         if self.value.shape != 1:
             raise ValueError("Sign operation only works on scalars")
@@ -72,42 +133,16 @@ class Variable:
         self.grad = self.grad.transpose()
         return self
 
-    def _local_backward(self):
-        assert self._op is not None
-        if self._op.single_variable_op is True:
-            gradient = self._op.df(self._children[0])
-            self._children[0].grad += np.matmul(self.grad, gradient[0])
-        else:
-            gradient = self._op.df(self._children[0], self._children[1])
-            if self._op.name == 'matmul':  # formulas are in the form of multiplying jacobians
-                self._children[0].grad += np.matmul(self.grad.transpose(), gradient[0]).transpose()
-                self._children[1].grad += np.matmul(self.grad, gradient[1])
-            else:
-                self._children[0].grad += np.matmul(self.grad, gradient[0])
-                self._children[1].grad += np.matmul(self.grad, gradient[1])
-
-    def backward(self):
-        top_var_list = []
-        visited = set()
-
-        # do topological sort to allow iteration through variables to calculated local gradients of
-        def topological_sort(var):
-            if var not in visited:
-                visited.add(var)
-                for child in var._children:
-                    topological_sort(child)
-                top_var_list.append(var)
-
-        topological_sort(self)
-
-        self.grad = np.identity(self.shape[0])
-        for var in reversed(top_var_list):
-            if var.requires_grad and var._op is not None:
-                var._local_backward()
-
 
 class Module:
+    """
+    Analog to torch.nn.Module
+    """
     def __init__(self, var_constructor=Variable, use_torch=False):
+        """
+        @param var_constructor: This allows to pass torch.Tensor (for gradient checking, see test.py)
+        @param use_torch: Set to true when using PyTorch to calculate gradients (for gradient checking)
+        """
         self.var_constructor = var_constructor
         self.use_torch = use_torch
 
@@ -141,6 +176,10 @@ class Module:
         return loss/len(dataset)
 
     def collect_parameters(self):
+        """
+        Collects all parameters of the Module and any submodules used during initialization
+        @return: set of all parameters that require gradients
+        """
         if self.use_torch:
             # This only works for Modules that do not have any torch.nn.Modules
             params = [param for param in self.__dict__.values() if isinstance(param, torch.Tensor)]
@@ -152,20 +191,28 @@ class Module:
         return params
 
 
-# Just defining a bunch of operations:
-
-# Elementwise operation taking two inputs
+# DEFINE OPERATIONS - to allow to backpropagate through the computational graph
 class Operation:
+    """
+    Base class for all operations.
+    All operations support operations on 2d np.arrays )
+    """
     def __init__(self):
         self.name = None
         self.single_variable_op = False
 
     @staticmethod
     def f(*args):
+        """
+        Calculate the output of the operation
+        """
         raise NotImplementedError
 
     @staticmethod
     def df(*args):
+        """
+        Calculate the Jacobian of the operation
+        """
         raise NotImplementedError
 
     def __repr__(self):
@@ -451,7 +498,7 @@ class ReLu(Operation):
             return [np.zeros((shape, shape))]
 
 
-# Matrix operations:
+# MATRIX OPERATIONS:
 class MatrixMultiplication(Operation):
     def __init__(self):
         super(MatrixMultiplication, self).__init__()
@@ -495,6 +542,7 @@ class Sum(Operation):
             return [np.array([0.])]
 
 
+# LOSS FUNCTIONS:
 class MSELoss(Operation):
     def __init__(self):
         super(MSELoss, self).__init__()
@@ -515,7 +563,3 @@ class MSELoss(Operation):
         if y.requires_grad:
             full_jacobian[1] = -2 * (x.value - y.value).transpose()
         return full_jacobian
-
-
-if __name__ == '__main__':
-    exit()
