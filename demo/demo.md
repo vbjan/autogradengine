@@ -190,7 +190,7 @@ The visualization shows that the algorithm converged exponentially and converges
 
 # Multivariate Minimization
 In the follwing, the autograd engine is applied to a multivariate minimization problem. The basic principle is the same as in the previous example, however here the optimization regime is $\mathbb R^2$, as we optimize over $x$ and $y$. The minimization problem will be 
-> $$x^*, y^* = \text{argmin}\left[{((x^2+y^3)-1) \cdot \exp{(-0.5{(x^2+y^2)})}}\right],$$
+> $$\star x, \star y = \text{argmin} \left[{((x^2+y^3)-1) \cdot \exp{(-0.5{(x^2+y^2)})}}\right],$$
 
 which is non-convex.
 
