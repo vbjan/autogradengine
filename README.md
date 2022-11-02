@@ -29,12 +29,17 @@ autogradengine
 │   requirements.txt
 │   demo.ipynb   # Jupyter notebook with application examples
 │
-└───autograd
-    │   __init__.py    # bread and butter of the engine
-    │   nn.py          # neural network modules
-    │   optimizer.py
-    │   test.py        # gradient checking
+└───autograd   
+│   │   __init__.py    # bread and butter of the engine
+│   │   nn.py          # neural network modules
+│   │   optimizer.py
+│   │   test.py        # gradient checking
+│ 
+└───imgs
+    │   ...
+ 
 ```
+
 
 ### Analogues to PyTorch
 The API follows the PyTorch API loosely. The following are analogues to each other:
