@@ -16,7 +16,7 @@ class Variable:
         @param _op: reference to Operation that created Variable in computational graph
         @param requires_grad: bool indicating whether gradients should be calculated for Variable
         """
-        if Operation.is_scalar(value):
+        if is_scalar(value):
             self.value = np.array([[value]], dtype=float)
         else:
             self.value = np.array(value, dtype=float)
@@ -184,6 +184,11 @@ class Module:
         return params
 
 
+def is_scalar(var):
+    if isinstance(var, int) or isinstance(var, float):
+        return True
+
+
 # DEFINE OPERATIONS - to allow to backpropagate through the computational graph
 class Operation:
     """
@@ -222,14 +227,10 @@ class Operation:
             other = Variable(other, requires_grad=False)
         return other
 
-    @staticmethod
-    def is_scalar(var):
-        if isinstance(var, int) or isinstance(var, float):
-            return True
 
     @staticmethod
     def make_into_vars(x, y):
-        if Operation.is_scalar(y):  # transform scalar to Variable with same shape to allow broadcasting
+        if is_scalar(y):  # transform scalar to Variable with same shape to allow broadcasting
             y = Variable(np.ones(x.value.shape) * y)
             y.grad = np.zeros(y.value.shape).transpose()
         x = Operation.check_if_var_else_create(x)
